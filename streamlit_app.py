@@ -65,68 +65,46 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_oil_data(commodity, start, end):
-    """
-    1차: ETF 티커 (가장 안정적)
-    2차: 선물 Futures 티커 (불안정할 수 있음)
-    3차: 합성 데이터 생성 (최후의 수단)
-    """
     import yfinance as yf
 
-    # ETF 티커 (1차 시도 — Streamlit Cloud에서 가장 안정적)
-    etf_tickers = {
-        "WTI Crude Oil": "USO",
-        "Brent Crude": "BNO",
-        "Natural Gas": "UNG"
-    }
-    # 선물 티커 (2차 시도)
-    futures_tickers = {
+    # 직접적인 선물(Futures) 티커를 최우선으로 사용
+    tickers = {
         "WTI Crude Oil": "CL=F",
         "Brent Crude": "BZ=F",
         "Natural Gas": "NG=F"
     }
+    ticker = tickers.get(commodity, "CL=F")
 
-    for attempt_name, ticker_map in [("ETF", etf_tickers), ("Futures", futures_tickers)]:
-        ticker = ticker_map.get(commodity, "USO")
-        try:
-            df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+    try:
+        # yf.download 대신 더 안정적인 Ticker().history() 사용
+        oil = yf.Ticker(ticker)
+        df = oil.history(start=start, end=end)
+        
+        if df is not None and not df.empty and len(df) >= 50:
+            df = df[['Close']].copy()
+            df.columns = ["price"]
+            df = df.dropna()
             
-            if df is not None and not df.empty and len(df) >= 50:
-                # MultiIndex 핸들링
-                if isinstance(df.columns, pd.MultiIndex):
-                    close_cols = [c for c in df.columns if 'Close' in str(c)]
-                    if close_cols:
-                        df = df[close_cols[0]].to_frame()
-                    else:
-                        df = df.iloc[:, 0].to_frame()
-                elif 'Close' in df.columns:
-                    df = df[['Close']]
-                else:
-                    df = df.iloc[:, :1]
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
                 
-                df.columns = ["price"]
-                df = df.dropna()
-                
-                if not isinstance(df.index, pd.DatetimeIndex):
-                    df.index = pd.to_datetime(df.index)
-                
-                if len(df) >= 50:
-                    return df
-        except Exception:
-            continue
+            return df
+    except Exception:
+        pass
     
-    # 3차 Fallback: 합성 데이터 (현실적 유가 시뮬레이션)
+    # 2차 Fallback: 합성 데이터 (실제 유가 100불 이상일 경우를 가정한 현실적 시뮬레이션)
     np.random.seed(42)
     n_days = 500
     dates = pd.date_range(end=pd.Timestamp(end), periods=n_days, freq="B")
     
-    # 현실적인 유가 시뮬레이션 (WTI 기준 ~$65-85 범위 + 트렌드 + 계절성 + 노이즈)
-    base_price = 72.0
-    trend = np.linspace(0, 8, n_days)
-    seasonality = 5 * np.sin(np.arange(n_days) * 2 * np.pi / 252)
-    noise = np.random.normal(0, 2.5, n_days)
-    random_walk = np.cumsum(np.random.normal(0, 0.3, n_days))
+    # "유가가 100불을 넘었다"는 현재 상황을 반영하여 Base Price를 105로 상향
+    base_price = 105.0 
+    trend = np.linspace(0, 12, n_days)
+    seasonality = 6 * np.sin(np.arange(n_days) * 2 * np.pi / 252)
+    noise = np.random.normal(0, 3.0, n_days)
+    random_walk = np.cumsum(np.random.normal(0, 0.4, n_days))
     prices = base_price + trend + seasonality + noise + random_walk
-    prices = np.clip(prices, 45, 120)  # 현실적 범위 내 클램핑
+    prices = np.clip(prices, 60, 180)  # 현실적 범위 내 클램핑
     
     df = pd.DataFrame({"price": prices}, index=dates)
     return df
