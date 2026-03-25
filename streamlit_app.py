@@ -61,50 +61,42 @@ header {visibility: hidden;}
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-#  유가 데이터 로드 (다단계 Fallback)
+#  유가 데이터 로드 (FRED API - 완전 무료 & 차단 없음)
 # ══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_oil_data(commodity, start, end):
-    import yfinance as yf
-
-    # 직접적인 선물(Futures) 티커를 최우선으로 사용
+    import pandas_datareader.data as web
+    import datetime
+    
+    # FRED 공식 티커 사용 (월스트리트 실제 데이터)
     tickers = {
-        "WTI Crude Oil": "CL=F",
-        "Brent Crude": "BZ=F",
-        "Natural Gas": "NG=F"
+        "WTI Crude Oil": "DCOILWTICO",
+        "Brent Crude": "DCOILBRENTE",
+        "Natural Gas": "DHHNGSP"
     }
-    ticker = tickers.get(commodity, "CL=F")
-
+    ticker = tickers.get(commodity, "DCOILWTICO")
+    
     try:
-        # yf.download 대신 더 안정적인 Ticker().history() 사용
-        oil = yf.Ticker(ticker)
-        df = oil.history(start=start, end=end)
-        
+        df = web.DataReader(ticker, 'fred', start, end)
         if df is not None and not df.empty and len(df) >= 50:
-            df = df[['Close']].copy()
             df.columns = ["price"]
             df = df.dropna()
-            
-            if not isinstance(df.index, pd.DatetimeIndex):
-                df.index = pd.to_datetime(df.index)
-                
             return df
     except Exception:
         pass
-    
-    # 2차 Fallback: 합성 데이터 (실제 유가 100불 이상일 경우를 가정한 현실적 시뮬레이션)
+        
+    # 만약 FRED도 터지면 합성 데이터 (비상용)
     np.random.seed(42)
     n_days = 500
     dates = pd.date_range(end=pd.Timestamp(end), periods=n_days, freq="B")
     
-    # "유가가 100불을 넘었다"는 현재 상황을 반영하여 Base Price를 105로 상향
     base_price = 105.0 
     trend = np.linspace(0, 12, n_days)
     seasonality = 6 * np.sin(np.arange(n_days) * 2 * np.pi / 252)
     noise = np.random.normal(0, 3.0, n_days)
     random_walk = np.cumsum(np.random.normal(0, 0.4, n_days))
     prices = base_price + trend + seasonality + noise + random_walk
-    prices = np.clip(prices, 60, 180)  # 현실적 범위 내 클램핑
+    prices = np.clip(prices, 60, 180) 
     
     df = pd.DataFrame({"price": prices}, index=dates)
     return df
@@ -143,7 +135,7 @@ def train_models_on_the_fly(_prices_tuple):
         optimizer = torch.optim.Adam(lstm_model.parameters(), lr=0.01)
 
         lstm_model.train()
-        for epoch in range(60):
+        for epoch in range(200):
             optimizer.zero_grad()
             output = lstm_model(X_tensor)
             loss = criterion(output, y_tensor)
