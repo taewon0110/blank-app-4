@@ -9,7 +9,6 @@ MBC-BLANK 스타일: 거대한 핵심 지표(RMSE 등) + 다크테마 시각화
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import matplotlib.pyplot as plt
 import platform
 import os
@@ -18,25 +17,9 @@ import torch.nn as nn
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from dotenv import load_dotenv
-import anthropic
 
 # ══════════════════════════════════════════════════════════════
-#  환경 변수 로드 (로컬 .env 또는 Streamlit Secrets)
-# ══════════════════════════════════════════════════════════════
-# 상위 디렉토리의 .env 파일 로드 시도 (로컬용)
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
-load_dotenv(dotenv_path=env_path)
-
-API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-if not API_KEY:
-    try:
-        API_KEY = st.secrets["ANTHROPIC_API_KEY"]
-    except:
-        API_KEY = None
-
-# ══════════════════════════════════════════════════════════════
-#  스타일 및 폰트 설정
+#  폰트 및 차트 스타일
 # ══════════════════════════════════════════════════════════════
 if platform.system() == "Darwin":
     plt.rcParams["font.family"] = "AppleGothic"
@@ -64,7 +47,7 @@ class LSTMPredictor(nn.Module):
 # ══════════════════════════════════════════════════════════════
 #  앱 기본 설정
 # ══════════════════════════════════════════════════════════════
-st.set_page_config(page_title="🛢️ AI Oil & Market Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="🛢️ AI Oil Price Dashboard", layout="wide", initial_sidebar_state="expanded")
 
 hide_st_style = """
             <style>
@@ -76,26 +59,51 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-#  데이터 파이프라인 (캐싱)
+#  유가 데이터 로드 (yfinance)
 # ══════════════════════════════════════════════════════════════
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_oil_data(commodity, start, end):
+    import yfinance as yf
     tickers = {"WTI Crude Oil": "CL=F", "Brent Crude": "BZ=F", "Natural Gas": "NG=F"}
     ticker = tickers.get(commodity, "CL=F")
-    
-    df = yf.download(ticker, start=start, end=end, progress=False)
-    if df.empty: return pd.DataFrame()
-    
-    if isinstance(df.columns, pd.MultiIndex):
-        df = df['Close']
-    else:
-        df = df[['Close']]
-        
-    df.columns = ["price"]
-    return df.dropna()
 
+    try:
+        df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+    except Exception:
+        return pd.DataFrame()
+    
+    if df is None or df.empty:
+        return pd.DataFrame()
+    
+    # MultiIndex 핸들링 (yfinance 버전에 따라 컬럼 구조가 다를 수 있음)
+    if isinstance(df.columns, pd.MultiIndex):
+        # ('Close', 'CL=F') 등의 형태
+        close_col = [c for c in df.columns if 'Close' in str(c)]
+        if close_col:
+            df = df[close_col[0]].to_frame()
+        else:
+            df = df.iloc[:, 0].to_frame()
+    elif 'Close' in df.columns:
+        df = df[['Close']]
+    else:
+        df = df.iloc[:, :1]
+    
+    df.columns = ["price"]
+    df = df.dropna()
+    
+    # Index를 DatetimeIndex로 확실히
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df.index = pd.to_datetime(df.index)
+    
+    return df
+
+# ══════════════════════════════════════════════════════════════
+#  모델 On-the-fly 학습 (캐싱)
+# ══════════════════════════════════════════════════════════════
 @st.cache_resource(show_spinner="🔥 외부 가중치 없이 실시간 On-the-fly 모델 학습 중...")
-def train_models_on_the_fly(prices):
+def train_models_on_the_fly(_prices_tuple):
+    """실제 유가 데이터를 바탕으로 LinearRegression과 LSTM을 즉시 학습"""
+    prices = np.array(_prices_tuple)
     trained = {}
     
     # 1. Linear Regression
@@ -124,7 +132,7 @@ def train_models_on_the_fly(prices):
         optimizer = torch.optim.Adam(lstm_model.parameters(), lr=0.01)
 
         lstm_model.train()
-        for epoch in range(60): # 빠른 실시간 학습을 위한 에포크
+        for epoch in range(60):
             optimizer.zero_grad()
             output = lstm_model(X_tensor)
             loss = criterion(output, y_tensor)
@@ -138,17 +146,20 @@ def train_models_on_the_fly(prices):
 # ─── 사이드바 ───
 st.sidebar.markdown('### ⚙️ Prediction Settings')
 commodity = st.sidebar.selectbox("Commodity", ["WTI Crude Oil", "Brent Crude", "Natural Gas"])
-start_date = st.sidebar.date_input("Start Date", pd.Timestamp.today() - pd.Timedelta(days=700))
-end_date = st.sidebar.date_input("End Date", pd.Timestamp.today())
+start_date = st.sidebar.date_input("Start Date", pd.Timestamp("2024-03-01"))
+end_date = st.sidebar.date_input("End Date", pd.Timestamp("2026-03-20"))
 forecast_days = st.sidebar.slider("Forecast Horizon (days)", 1, 60, 30)
 show_confidence = st.sidebar.checkbox("Show Confidence Interval", value=True)
 
 df = load_oil_data(commodity, str(start_date), str(end_date))
+
 if df.empty or len(df) < 50:
-    st.error("데이터 로드 실패 또는 기간이 너무 짧습니다.")
+    st.error("⚠️ 데이터 로드 실패 또는 기간이 너무 짧습니다. 날짜 범위를 넓히거나 다른 원자재를 선택하세요.")
+    st.info(f"선택: {commodity} | 기간: {start_date} ~ {end_date}")
     st.stop()
 
-models = train_models_on_the_fly(df["price"].values)
+# numpy array를 tuple로 캐시 키 만들기
+models = train_models_on_the_fly(tuple(df["price"].values))
 available_models = list(models.keys())
 model_type = st.sidebar.radio("Model", available_models, index=1 if "LSTM" in available_models else 0)
 
@@ -178,7 +189,7 @@ elif model_type == "LSTM":
     with torch.no_grad():
         for i in range(split_idx, len(df)):
             x_seq = prices_scaled[i - window : i]
-            if len(x_seq) < window:  
+            if len(x_seq) < window:
                 pred_test_scaled.append(prices_scaled[i])
                 continue
             x_tensor = torch.FloatTensor(x_seq).unsqueeze(0).unsqueeze(-1)
@@ -187,7 +198,6 @@ elif model_type == "LSTM":
 
     pred_test = scaler.inverse_transform(np.array(pred_test_scaled).reshape(-1, 1)).flatten()
 
-    # 미래 예측
     current_seq = prices_scaled[-window:].tolist()
     pred_future_scaled = []
     with torch.no_grad():
@@ -209,13 +219,13 @@ mae = mean_absolute_error(actual_test, pred_test)
 # ══════════════════════════════════════════════════════════════
 st.markdown("<br>", unsafe_allow_html=True)
 c1, c2, c3 = st.columns(3)
-c1.markdown(f"<h1 style='text-align: center; color: white; font-size: 3.5rem; font-weight: 300;'>{rmse:.4f}</h1>", unsafe_allow_html=True)
-c2.markdown(f"<h1 style='text-align: center; color: white; font-size: 3.5rem; font-weight: 300;'>{r2:.4f}</h1>", unsafe_allow_html=True)
-c3.markdown(f"<h1 style='text-align: center; color: white; font-size: 3.5rem; font-weight: 300;'>{mae:.4f}</h1>", unsafe_allow_html=True)
+c1.markdown(f"<h1 style='text-align: center; font-size: 3.5rem; font-weight: 300;'>{rmse:.4f}</h1>", unsafe_allow_html=True)
+c2.markdown(f"<h1 style='text-align: center; font-size: 3.5rem; font-weight: 300;'>{r2:.4f}</h1>", unsafe_allow_html=True)
+c3.markdown(f"<h1 style='text-align: center; font-size: 3.5rem; font-weight: 300;'>{mae:.4f}</h1>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
-fig, ax = plt.subplots(figsize=(16, 7), facecolor='black')
-ax.set_facecolor('black')
+fig, ax = plt.subplots(figsize=(16, 7), facecolor='#0E1117')
+ax.set_facecolor('#0E1117')
 
 ax.plot(train_data.index, train_data["price"], label="Train", alpha=0.4, color="#a5b1fa")
 ax.plot(test_dates, actual_test, label="Actual (Test)", color="#2ecc71", linewidth=2.5)
@@ -229,7 +239,7 @@ if show_confidence:
 ax.set_title(f"{commodity} Price Forecast ({model_type} On-the-Fly)", fontsize=18, pad=15, color='white')
 ax.set_ylabel("Price (USD)", fontsize=12, color='white')
 ax.tick_params(colors='white')
-ax.legend(fontsize=11, loc='upper right', facecolor='black', edgecolor='white', labelcolor='white')
+ax.legend(fontsize=11, loc='upper right', facecolor='#0E1117', edgecolor='white', labelcolor='white')
 ax.grid(alpha=0.2, linestyle=':')
 
 for spine in ax.spines.values():
@@ -239,10 +249,17 @@ plt.tight_layout()
 st.pyplot(fig)
 
 # ══════════════════════════════════════════════════════════════
-#  AI Insight (LLM 연동)
+#  AI Insight (Claude API — st.secrets 전용)
 # ══════════════════════════════════════════════════════════════
+API_KEY = None
+try:
+    API_KEY = st.secrets["ANTHROPIC_API_KEY"]
+except:
+    pass
+
 if API_KEY:
-    st.markdown("### 🤖 Claude 3.5 Qualitative Market Insight")
+    import anthropic
+    st.markdown("### 🤖 Claude 3.5 Market Insight")
     if st.button("Generate Trend Analysis"):
         with st.spinner("Claude API 연산 중..."):
             try:
@@ -252,8 +269,8 @@ if API_KEY:
                 다음은 LSTM 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
                 
                 - 최근 종가: ${actual_test[-1]:.2f}
-                - {forecast_days}일 뒤 예측 종가:: ${pred_future[-1]:.2f}
-                - 모델 평가: RMSE {rmse:.4f}, R-Squared {r2:.4f}, MAE {mae:.4f}
+                - {forecast_days}일 뒤 예측 종가: ${pred_future[-1]:.2f}
+                - 모델 평가: RMSE {rmse:.4f}, R² {r2:.4f}, MAE {mae:.4f}
                 
                 이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요.
                 """
@@ -262,17 +279,14 @@ if API_KEY:
                     max_tokens=250,
                     messages=[{"role": "user", "content": prompt}]
                 )
-                
                 st.info(response.content[0].text)
             except Exception as e:
                 st.error(f"API 호출 중 에러 발생: {e}")
-else:
-    st.warning("Anthropic API 키가 설정되지 않아 AI Market Insight 기능을 사용할 수 없습니다. (.env 또는 st.secrets 확인)")
-    
+
 with st.expander("Prediction Comparison Table"):
     comp = pd.DataFrame({
-        "Date": test_dates, 
-        "Actual": actual_test, 
+        "Date": test_dates,
+        "Actual": actual_test,
         "Predicted": pred_test,
         "Error": actual_test - pred_test,
         "Error %": ((actual_test - pred_test) / actual_test * 100)

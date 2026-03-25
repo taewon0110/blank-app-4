@@ -1,13 +1,9 @@
 streamlit
 pandas
 numpy
-requests
 matplotlib
 scikit-learn
-statsmodels
-joblib
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 yfinance
 anthropic
-python-dotenv
