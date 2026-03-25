@@ -306,7 +306,7 @@ if API_KEY:
                 이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요.
                 """
                 response = client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
+                    model="claude-3-5-sonnet-latest",
                     max_tokens=250,
                     messages=[{"role": "user", "content": prompt}]
                 )
