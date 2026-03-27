@@ -156,8 +156,7 @@ def fetch_macro_data(period="1y"):
     if data:
         combined = pd.DataFrame(data)
         # 결측값 채우기 (시장 전반의 휴장일 등 처리)
-        combined.ffill(inplace=True)
-        combined.bfill(inplace=True)
+        combined = combined.ffill().bfill()
         # 시간 정보만 사용
         combined.index = pd.to_datetime(combined.index).date
         combined.index.name = "Date"
