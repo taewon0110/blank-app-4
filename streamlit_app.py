@@ -140,6 +140,21 @@ header {visibility: hidden;}
 st.markdown(premium_css, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
+#  Hero Banner (서버 부하 0% - 클라이언트 브라우저 직접 로드)
+# ══════════════════════════════════════════════════════════════
+st.markdown("""
+<div style="width: 100%; max-height: 180px; overflow: hidden; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); position: relative;">
+    <img src="https://images.unsplash.com/photo-1613521140785-e85e427f8002?q=80&w=2000&auto=format&fit=crop" 
+         style="width: 100%; object-fit: cover; object-position: center; filter: brightness(0.6) contrast(1.2);" 
+         loading="lazy" alt="Market Data Background">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 100%;">
+        <h1 style="margin: 0; color: white; font-size: 2.5rem; letter-spacing: 2px; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">AI MARKET INTELLIGENCE</h1>
+        <p style="margin: 5px 0 0 0; color: #a5b1fa; font-size: 1rem; letter-spacing: 1px;">Real-time Predictive Analytics & Quantitative Insights</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════
 #  유가 데이터 로드 (FRED API - 완전 무료 & 차단 없음)
 # ══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=3600)
