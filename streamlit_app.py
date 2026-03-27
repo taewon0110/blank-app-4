@@ -1,15 +1,11 @@
-"""세션 5-8: [프로젝트] AI + Streamlit 연동 (유가 예측 및 LLM 해석 대시보드)실행: streamlit run streamlit_app.pyMBC-BLANK 스타일: 거대한 핵심 지표(RMSE 등) + 다크테마 시각화기능 1: 사전 가중치 훈련 파일 없이 FRED/합성 기반 실시간 On-the-fly 학습 (선형회귀 / LSTM)기능 2: 예측 결과를 바탕으로 HuggingFace Inference API 연동하여 정량 분석(Market Insight) 제공"""import streamlit as stimport pandas as pdimport numpy as npimport matplotlib.pyplot as pltimport matplotlib.ticker as mtickerimport platformimport osimport torchimport torch.nn as nnfrom sklearn.linear_model import LinearRegressionfrom sklearn.preprocessing import MinMaxScalerfrom sklearn.metrics import mean_squared_error, mean_absolute_error, r2_scorefrom datetime import datetime# ══════════════════════════════════════════════════════════════#  폰트 및 차트 스타일# ══════════════════════════════════════════════════════════════if platform.system() == "Darwin":    plt.rcParams["font.family"] = "AppleGothic"elif platform.system() == "Windows":    plt.rcParams["font.family"] = "Malgun Gothic"else:    plt.rcParams["font.family"] = "DejaVu Sans"plt.rcParams["axes.unicode_minus"] = Falseplt.style.use('dark_background')# ══════════════════════════════════════════════════════════════#  LSTM 구조# ══════════════════════════════════════════════════════════════class LSTMPredictor(nn.Module):    def __init__(self, input_size=1, hidden_size=64, num_layers=2):        super().__init__()        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.1)        self.fc = nn.Linear(hidden_size, 1)    def forward(self, x):        out, _ = self.lstm(x)        return self.fc(out[:, -1, :])# ══════════════════════════════════════════════════════════════#  앱 기본 설정# ══════════════════════════════════════════════════════════════st.set_page_config(page_title="🛢️ AI Oil & Energy Dashboard", layout="wide", initial_sidebar_state="expanded")
 
 # --- PAGE NAVIGATION ---
 st.sidebar.title("🧭 Navigation")
 page = st.sidebar.selectbox("Choose Page", ["🛢️ Oil Intelligence", "🌐 Macro Terminal"])
 
 if page == "🛢️ Oil Intelligence":
-    # Original App Code
-    # 프리미엄 다크 테마 CSSpremium_css = """<style>#MainMenu {visibility: hidden;}footer {visibility: hidden;}header {visibility: hidden;}/* 메트릭 카드 */.metric-card {    background: linear-gradient(135deg, rgba(30,30,50,0.9), rgba(20,20,40,0.95));    border: 1px solid rgba(120,120,180,0.15);    border-radius: 16px;    padding: 24px 16px 18px;    text-align: center;    backdrop-filter: blur(10px);    transition: transform 0.2s ease, box-shadow 0.2s ease;}.metric-card:hover {    transform: translateY(-2px);    box-shadow: 0 8px 25px rgba(100,100,200,0.15);}.metric-value {    font-size: 2.8rem;    font-weight: 200;
-
+    404: Not Found
 elif page == "🌐 Macro Terminal":
-    # Integrated Macro Terminal Code
     import streamlit as st
     import yfinance as yf
     import pandas as pd
