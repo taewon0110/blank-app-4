@@ -117,42 +117,51 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=1800)
 def fetch_macro_data(period="1y"):
+    import pandas_datareader.data as web
+    from datetime import datetime, timedelta
+    
+    # FRED Series IDs: 완전 무료 & 차단 우려 제로
+    # SP500: S&P 500
+    # DGS10: 10-Year Treasury Yield
+    # GOLDAMGBNP: London Gold Fixing
+    # DTWEXBGS: Trade Weighted U.S. Dollar Index
+    
     tickers = {
-        "S&P 500 (Equity)": "^GSPC",
-        "US 10-Yr Yield (Rates)": "^TNX",
-        "Gold (Safe Haven)": "GC=F",
-        "USD Index (Currency)": "DX-Y.NYB"
+        "S&P 500 (Equity)": "SP500",
+        "US 10-Yr Yield (Rates)": "DGS10",
+        "Gold (Safe Haven)": "GOLDAMGBNP",
+        "USD Index (Currency)": "DTWEXBGS"
     }
     
+    end = datetime.now()
+    if period == "1mo": start = end - timedelta(days=30)
+    elif period == "3mo": start = end - timedelta(days=90)
+    elif period == "6mo": start = end - timedelta(days=180)
+    elif period == "1y": start = end - timedelta(days=365)
+    elif period == "2y": start = end - timedelta(days=730)
+    else: start = end - timedelta(days=1825)
+
     data = {}
     for name, ticker in tickers.items():
         try:
-            # group_by='ticker' (기본값) 대응하여 데이터 추출
-            df = yf.download(ticker, period=period, progress=False)
-            if not df.empty:
-                # yfinance 최신 버전 MultiIndex 대응: Close 컬럼의 첫 번째 열 추출
-                if "Close" in df.columns:
-                    target = df["Close"]
-                    # 만약 DataFrame으로 반환된다면 첫 번째 열을 Series로 변환
-                    if isinstance(target, pd.DataFrame):
-                        data[name] = target.iloc[:, 0]
-                    else:
-                        data[name] = target
-                elif isinstance(df.columns, pd.MultiIndex):
-                    # MultiIndex인 경우 첫 번째 레벨이 Close인 열을 직접 찾음
-                    data[name] = df.xs('Close', axis=1, level=0).iloc[:, 0]
+            # FRED API 호출
+            df = web.DataReader(ticker, 'fred', start, end)
+            if df is not None and not df.empty:
+                # FRED 데이터는 Ticker명과 컬럼명이 동일함
+                data[name] = df[ticker]
         except Exception as e:
-            print(f"Error fetching {ticker}: {e}")
+            # 개별 데이터 실패 시 skip
+            continue
             
     if data:
-        # 모든 데이터셋을 하나의 DataFrame으로 결합
         combined = pd.DataFrame(data)
-        # 시간 정보만 유지 (Date Index)
+        # 결측값 채우기 (시장 전반의 휴장일 등 처리)
+        combined.ffill(inplace=True).bfill(inplace=True)
+        # 시간 정보만 사용
         combined.index = pd.to_datetime(combined.index).date
         combined.index.name = "Date"
-        # 결측값 처리 (시장 휴장일 등)
-        combined.ffill(inplace=True).bfill(inplace=True)
         return combined
+        
     return pd.DataFrame()
 
 # ══════════════════════════════════════════════════════════════
