@@ -414,9 +414,10 @@ except Exception:
 def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _forecast_price, _change_pct, _rmse, _r2, _mae, _forecast_days, _n_data, _start, _end):
     """AI 분석 캐싱 함수 — 동일 파라미터면 캐시에서 즉시 로드 (TTL 30분)"""
     from huggingface_hub import InferenceClient
+    import re
     client = InferenceClient(token=api_key)
     response = client.chat_completion(
-        model="Qwen/Qwen2.5-7B-Instruct",
+        model="Qwen/Qwen3-30B-A3B",
         messages=[
             {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise, sharp, and professional. Use financial terminology."},
             {"role": "user", "content": f"""다음은 {_model_type} 모델이 실시간으로 {_commodity} 자산의 가격을 예측한 데이터입니다:
@@ -432,7 +433,8 @@ def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _foreca
         max_tokens=300,
         temperature=0.7,
     )
-    return response.choices[0].message.content
+    raw_content = response.choices[0].message.content
+    return re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
 
 if HF_API_KEY:
     st.markdown("### 🤖 AI Qualitative Market Insight")
