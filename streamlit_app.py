@@ -402,7 +402,7 @@ plt.tight_layout()
 st.pyplot(fig)
 
 # ══════════════════════════════════════════════════════════════
-#  AI Insight (HuggingFace Inference API — Zephyr-7B)
+#  AI Insight (HuggingFace — 실시간 자동 연동 + 캐싱)
 # ══════════════════════════════════════════════════════════════
 HF_API_KEY = None
 try:
@@ -410,43 +410,60 @@ try:
 except Exception:
     pass
 
-if HF_API_KEY:
+@st.cache_data(show_spinner=False, ttl=1800)
+def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _forecast_price, _change_pct, _rmse, _r2, _mae, _forecast_days, _n_data, _start, _end):
+    """AI 분석 캐싱 함수 — 동일 파라미터면 캐시에서 즉시 로드 (TTL 30분)"""
     import requests as hf_req
-    st.markdown("### 🤖 AI Qualitative Market Insight")
-    if st.button("🔍 Generate Trend Analysis", use_container_width=True):
-        with st.spinner("AI 분석 연산 중..."):
-            try:
-                HF_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta/v1/chat/completions"
-                headers = {
-                    "Authorization": f"Bearer {HF_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "HuggingFaceH4/zephyr-7b-beta",
-                    "messages": [
-                        {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise and sharp. Use professional financial terminology."},
-                        {"role": "user", "content": f"""다음은 {model_type} 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
+    HF_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "HuggingFaceH4/zephyr-7b-beta",
+        "messages": [
+            {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise, sharp, and professional. Use financial terminology."},
+            {"role": "user", "content": f"""다음은 {_model_type} 모델이 실시간으로 {_commodity} 자산의 가격을 예측한 데이터입니다:
 
-- 최근 종가: ${latest_price:.2f}
-- {forecast_days}일 뒤 예측 종가: ${forecast_price:.2f}
-- 예상 변동률: {price_change_pct:+.2f}%
-- 모델 평가: RMSE {rmse:.4f}, R² {r2:.4f}, MAE {mae:.4f}
-- 분석 기간: {start_date} ~ {end_date} ({len(df)}개 거래일)
+- 최근 종가: ${_latest_price:.2f}
+- {_forecast_days}일 뒤 예측 종가: ${_forecast_price:.2f}
+- 예상 변동률: {_change_pct:+.2f}%
+- 모델 평가: RMSE {_rmse:.4f}, R² {_r2:.4f}, MAE {_mae:.4f}
+- 분석 기간: {_start} ~ {_end} ({_n_data}개 거래일)
 
 이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요."""}
-                    ],
-                    "max_tokens": 300,
-                    "temperature": 0.7
-                }
-                resp = hf_req.post(HF_URL, headers=headers, json=payload, timeout=30)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    insight_text = result["choices"][0]["message"]["content"]
-                    st.markdown(f'<div class="insight-card">{insight_text}</div>', unsafe_allow_html=True)
-                else:
-                    st.error(f"API 응답 오류 (HTTP {resp.status_code}): {resp.text[:200]}")
-            except Exception as e:
-                st.error(f"API 호출 중 에러 발생: {e}")
+        ],
+        "max_tokens": 300,
+        "temperature": 0.7
+    }
+    resp = hf_req.post(HF_URL, headers=headers, json=payload, timeout=30)
+    if resp.status_code == 200:
+        return resp.json()["choices"][0]["message"]["content"]
+    else:
+        return f"__ERROR__|HTTP {resp.status_code}: {resp.text[:150]}"
+
+if HF_API_KEY:
+    st.markdown("### 🤖 AI Qualitative Market Insight")
+    st.caption("📡 실시간 자동 분석 · 파라미터 변경 시 자동 갱신 · 30분 캐싱")
+    
+    # 수동 재분석 버튼
+    col_btn, col_info = st.columns([1, 3])
+    force_refresh = col_btn.button("🔄 재분석", use_container_width=True)
+    if force_refresh:
+        generate_ai_insight.clear()
+    
+    # 자동 실행 (캐싱)
+    with st.spinner("🧠 AI가 시장 데이터를 분석하고 있습니다..."):
+        try:
+            insight = generate_ai_insight(
+                HF_API_KEY, commodity, model_type,
+                round(latest_price, 2), round(forecast_price, 2), round(price_change_pct, 2),
+                round(rmse, 4), round(r2, 4), round(mae, 4),
+                forecast_days, len(df), str(start_date), str(end_date)
+            )
+            if insight.startswith("__ERROR__"):
+                st.error(f"API 응답 오류: {insight.replace('__ERROR__|', '')}")
+            else:
+                st.markdown(f'<div class="insight-card">{insight}</div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"API 호출 중 에러 발생: {e}")
 
 # ══════════════════════════════════════════════════════════════
 #  상세 데이터 테이블
