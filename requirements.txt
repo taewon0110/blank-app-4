@@ -8,3 +8,4 @@ torch
 yfinance
 huggingface_hub
 pandas-datareader
+plotly
