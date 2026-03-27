@@ -413,12 +413,11 @@ except Exception:
 @st.cache_data(show_spinner=False, ttl=1800)
 def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _forecast_price, _change_pct, _rmse, _r2, _mae, _forecast_days, _n_data, _start, _end):
     """AI 분석 캐싱 함수 — 동일 파라미터면 캐시에서 즉시 로드 (TTL 30분)"""
-    import requests as hf_req
-    HF_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": "HuggingFaceH4/zephyr-7b-beta",
-        "messages": [
+    from huggingface_hub import InferenceClient
+    client = InferenceClient(token=api_key)
+    response = client.chat_completion(
+        model="HuggingFaceH4/zephyr-7b-beta",
+        messages=[
             {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise, sharp, and professional. Use financial terminology."},
             {"role": "user", "content": f"""다음은 {_model_type} 모델이 실시간으로 {_commodity} 자산의 가격을 예측한 데이터입니다:
 
@@ -430,14 +429,10 @@ def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _foreca
 
 이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요."""}
         ],
-        "max_tokens": 300,
-        "temperature": 0.7
-    }
-    resp = hf_req.post(HF_URL, headers=headers, json=payload, timeout=30)
-    if resp.status_code == 200:
-        return resp.json()["choices"][0]["message"]["content"]
-    else:
-        return f"__ERROR__|HTTP {resp.status_code}: {resp.text[:150]}"
+        max_tokens=300,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content
 
 if HF_API_KEY:
     st.markdown("### 🤖 AI Qualitative Market Insight")
@@ -458,10 +453,7 @@ if HF_API_KEY:
                 round(rmse, 4), round(r2, 4), round(mae, 4),
                 forecast_days, len(df), str(start_date), str(end_date)
             )
-            if insight.startswith("__ERROR__"):
-                st.error(f"API 응답 오류: {insight.replace('__ERROR__|', '')}")
-            else:
-                st.markdown(f'<div class="insight-card">{insight}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="insight-card">{insight}</div>', unsafe_allow_html=True)
         except Exception as e:
             st.error(f"API 호출 중 에러 발생: {e}")
 
