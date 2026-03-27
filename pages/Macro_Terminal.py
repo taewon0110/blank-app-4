@@ -127,22 +127,31 @@ def fetch_macro_data(period="1y"):
     data = {}
     for name, ticker in tickers.items():
         try:
+            # group_by='ticker' (기본값) 대응하여 데이터 추출
             df = yf.download(ticker, period=period, progress=False)
             if not df.empty:
-                data[name] = df['Close']
-        except Exception:
-            pass
+                # yfinance 최신 버전 MultiIndex 대응: Close 컬럼의 첫 번째 열 추출
+                if "Close" in df.columns:
+                    target = df["Close"]
+                    # 만약 DataFrame으로 반환된다면 첫 번째 열을 Series로 변환
+                    if isinstance(target, pd.DataFrame):
+                        data[name] = target.iloc[:, 0]
+                    else:
+                        data[name] = target
+                elif isinstance(df.columns, pd.MultiIndex):
+                    # MultiIndex인 경우 첫 번째 레벨이 Close인 열을 직접 찾음
+                    data[name] = df.xs('Close', axis=1, level=0).iloc[:, 0]
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
             
     if data:
-        # Convert dict of Series to DataFrame
+        # 모든 데이터셋을 하나의 DataFrame으로 결합
         combined = pd.DataFrame(data)
-        # Drop rows with all NaN
-        combined.dropna(how='all', inplace=True)
-        # Forward fill remaining NaNs (market holidays)
-        combined.ffill(inplace=True)
-        # Flatten multiindex columns from yf.download
-        if isinstance(combined.columns, pd.MultiIndex):
-            combined.columns = [col[0] for col in combined.columns]
+        # 시간 정보만 유지 (Date Index)
+        combined.index = pd.to_datetime(combined.index).date
+        combined.index.name = "Date"
+        # 결측값 처리 (시장 휴장일 등)
+        combined.ffill(inplace=True).bfill(inplace=True)
         return combined
     return pd.DataFrame()
 
