@@ -416,7 +416,7 @@ def generate_ai_insight(api_key, _commodity, _model_type, _latest_price, _foreca
     from huggingface_hub import InferenceClient
     client = InferenceClient(token=api_key)
     response = client.chat_completion(
-        model="Qwen/Qwen2.5-72B-Instruct",
+        model="Qwen/Qwen2.5-7B-Instruct",
         messages=[
             {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise, sharp, and professional. Use financial terminology."},
             {"role": "user", "content": f"""다음은 {_model_type} 모델이 실시간으로 {_commodity} 자산의 가격을 예측한 데이터입니다:
