@@ -6,5 +6,5 @@ scikit-learn
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 yfinance
-huggingface_hub
+requests
 pandas-datareader

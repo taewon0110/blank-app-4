@@ -259,29 +259,38 @@ except Exception:
     pass
 
 if HF_API_KEY:
-    from huggingface_hub import InferenceClient
+    import requests as hf_req
     st.markdown("### 🤖 AI Qualitative Market Insight")
     if st.button("Generate Trend Analysis"):
         with st.spinner("AI 분석 연산 중..."):
             try:
-                hf_client = InferenceClient(token=HF_API_KEY)
-                prompt_msg = [
-                    {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise and sharp."},
-                    {"role": "user", "content": f"""다음은 LSTM 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
+                # HuggingFace Inference API 직접 호출 (라우팅 문제 회피)
+                HF_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {HF_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "HuggingFaceH4/zephyr-7b-beta",
+                    "messages": [
+                        {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise and sharp."},
+                        {"role": "user", "content": f"""다음은 LSTM 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
 
 - 최근 종가: ${actual_test[-1]:.2f}
 - {forecast_days}일 뒤 예측 종가: ${pred_future[-1]:.2f}
 - 모델 평가: RMSE {rmse:.4f}, R² {r2:.4f}, MAE {mae:.4f}
 
 이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요."""}
-                ]
-                response = hf_client.chat_completion(
-                    model="HuggingFaceH4/zephyr-7b-beta",
-                    messages=prompt_msg,
-                    max_tokens=300,
-                    temperature=0.7,
-                )
-                st.info(response.choices[0].message.content)
+                    ],
+                    "max_tokens": 300,
+                    "temperature": 0.7
+                }
+                resp = hf_req.post(HF_URL, headers=headers, json=payload, timeout=30)
+                if resp.status_code == 200:
+                    result = resp.json()
+                    st.info(result["choices"][0]["message"]["content"])
+                else:
+                    st.error(f"API 응답 오류 (HTTP {resp.status_code}): {resp.text[:200]}")
             except Exception as e:
                 st.error(f"API 호출 중 에러 발생: {e}")
 
