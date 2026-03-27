@@ -4,7 +4,7 @@
 
 MBC-BLANK 스타일: 거대한 핵심 지표(RMSE 등) + 다크테마 시각화
 기능 1: 사전 가중치 훈련 파일 없이 yfinance 기반 실시간 On-the-fly 학습 (선형회귀 / LSTM)
-기능 2: 예측 결과를 바탕으로 Anthropic (Claude) API 연동하여 정량 분석(Market Insight) 제공
+기능 2: 예측 결과를 바탕으로 Google Gemini API 연동하여 정량 분석(Market Insight) 제공
 
 ※ yfinance 선물 티커(CL=F 등) 불안정 대비: ETF 티커(USO, BNO, UNG) 우선 사용 + 다단계 Fallback
 """
@@ -250,37 +250,38 @@ plt.tight_layout()
 st.pyplot(fig)
 
 # ══════════════════════════════════════════════════════════════
-#  AI Insight (Claude API — st.secrets 전용, 키 안전)
+#  AI Insight (HuggingFace Inference API — Zephyr-7B)
 # ══════════════════════════════════════════════════════════════
-API_KEY = None
+HF_API_KEY = None
 try:
-    API_KEY = st.secrets["ANTHROPIC_API_KEY"]
+    HF_API_KEY = st.secrets["HUGGINGFACE_API_KEY"]
 except Exception:
     pass
 
-if API_KEY:
-    import anthropic
-    st.markdown("### 🤖 Claude 3.5 Market Insight")
+if HF_API_KEY:
+    from huggingface_hub import InferenceClient
+    st.markdown("### 🤖 AI Qualitative Market Insight")
     if st.button("Generate Trend Analysis"):
-        with st.spinner("Claude API 연산 중..."):
+        with st.spinner("AI 분석 연산 중..."):
             try:
-                client = anthropic.Anthropic(api_key=API_KEY)
-                prompt = f"""
-                당신은 월스트리트 최고 수준의 정량(Quant) 분석 AI입니다.
-                다음은 LSTM 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
-                
-                - 최근 종가: ${actual_test[-1]:.2f}
-                - {forecast_days}일 뒤 예측 종가: ${pred_future[-1]:.2f}
-                - 모델 평가: RMSE {rmse:.4f}, R² {r2:.4f}, MAE {mae:.4f}
-                
-                이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요.
-                """
-                response = client.messages.create(
-                    model="claude-3-5-sonnet-latest",
-                    max_tokens=250,
-                    messages=[{"role": "user", "content": prompt}]
+                hf_client = InferenceClient(token=HF_API_KEY)
+                prompt_msg = [
+                    {"role": "system", "content": "You are a top Wall Street quantitative analyst. Always respond in Korean. Be concise and sharp."},
+                    {"role": "user", "content": f"""다음은 LSTM 모델이 실시간으로 {commodity} 자산의 가격을 예측한 데이터입니다:
+
+- 최근 종가: ${actual_test[-1]:.2f}
+- {forecast_days}일 뒤 예측 종가: ${pred_future[-1]:.2f}
+- 모델 평가: RMSE {rmse:.4f}, R² {r2:.4f}, MAE {mae:.4f}
+
+이 지표들을 바탕으로, 해당 원자재의 미래 추세와 리스크를 분석하는 전문가 수준의 요약(Executive Summary)을 3문장 이내로 작성하세요. 반드시 시장 논리를 곁들이고, 냉정하고 날카로운 톤을 유지하세요."""}
+                ]
+                response = hf_client.chat_completion(
+                    model="HuggingFaceH4/zephyr-7b-beta",
+                    messages=prompt_msg,
+                    max_tokens=300,
+                    temperature=0.7,
                 )
-                st.info(response.content[0].text)
+                st.info(response.choices[0].message.content)
             except Exception as e:
                 st.error(f"API 호출 중 에러 발생: {e}")
 
