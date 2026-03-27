@@ -123,13 +123,13 @@ def fetch_macro_data(period="1y"):
     # FRED Series IDs: 완전 무료 & 차단 우려 제로
     # SP500: S&P 500
     # DGS10: 10-Year Treasury Yield
-    # GOLDAMGBNP: London Gold Fixing
+    # GOLDPMGBDS: Gold Fixing Price 3:00 P.M. (London time)
     # DTWEXBGS: Trade Weighted U.S. Dollar Index
     
     tickers = {
         "S&P 500 (Equity)": "SP500",
         "US 10-Yr Yield (Rates)": "DGS10",
-        "Gold (Safe Haven)": "GOLDAMGBNP",
+        "Gold (Safe Haven)": "GOLDPMGBDS",
         "USD Index (Currency)": "DTWEXBGS"
     }
     
@@ -148,15 +148,16 @@ def fetch_macro_data(period="1y"):
             df = web.DataReader(ticker, 'fred', start, end)
             if df is not None and not df.empty:
                 # FRED 데이터는 Ticker명과 컬럼명이 동일함
-                data[name] = df[ticker]
+                # 데이터가 모두 NaN인 경우를 대비해 ffill/bfill 적용 전 확인
+                series = df[ticker].ffill().bfill()
+                if not series.isnull().all():
+                    data[name] = series
         except Exception as e:
             # 개별 데이터 실패 시 skip
             continue
             
     if data:
         combined = pd.DataFrame(data)
-        # 결측값 채우기 (시장 전반의 휴장일 등 처리)
-        combined = combined.ffill().bfill()
         # 시간 정보만 사용
         combined.index = pd.to_datetime(combined.index).date
         combined.index.name = "Date"
@@ -201,7 +202,7 @@ with st.sidebar:
     
     st.markdown("""
         <div class="sidebar-info">
-            🚀 <strong>Data Feed:</strong> Yahoo Finance<br>
+            🚀 <strong>Data Feed:</strong> FRED (St. Louis Fed)<br>
             🧠 <strong>Analysis:</strong> Qwen2.5-7B (HF API)<br>
             ⏳ <strong>Update Freq:</strong> Sub-second (Cached)<br>
             🛡️ <strong>Latency:</strong> Zero-overhead
