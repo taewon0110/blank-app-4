@@ -499,6 +499,4 @@ with st.expander("📊 Forecast Statistics"):
     fs1.metric("Min Forecast", f"${pred_future.min():.2f}")
     fs2.metric("Max Forecast", f"${pred_future.max():.2f}")
     fs3.metric("Avg Forecast", f"${pred_future.mean():.2f}")
-    fs4.metric("Volatility (σ)", f"${np.std(pred_future):.2f}")
-#   t r i g g e r  
- 
+    fs4.metric("Volatility (σ)", f"${np.std(pred_future):.2f}")                                
